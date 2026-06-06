@@ -42,6 +42,8 @@ public class DataInitializer implements CommandLineRunner {
                 .monthlyIncome(new BigDecimal("5000.00"))
                 .creditScore(740)
                 .balance(new BigDecimal("12500.00"))
+                .failedLoginAttempts(0)
+                .accountNonLocked(true)
                 .build();
 
         userRepository.save(user);

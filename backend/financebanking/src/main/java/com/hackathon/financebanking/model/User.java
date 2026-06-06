@@ -34,4 +34,8 @@ public class User {
     private Integer creditScore;
 
     private BigDecimal balance;
+
+    private Integer failedLoginAttempts;
+
+    private Boolean accountNonLocked;
 }

@@ -1,20 +1,20 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Dashboard from "./pages/Dashboard";
-import Expenses from "./pages/Expenses";
-import FraudAlerts from "./pages/FraudAlerts";
-import LoanPredictor from "./pages/LoanPredictor";
-import SavingsGoals from "./pages/SavingsGoals";
-import StockSimulator from "./pages/StockSimulator";
+import Login from "./pages/login";
+import Register from "./pages/register";
+import Dashboard from "./pages/dashboard";
+import Expenses from "./pages/expenses";
+import FraudAlerts from "./pages/fraudalerts";
+import LoanPredictor from "./pages/loanpredictor";
+import SavingsGoals from "./pages/savingsgoals";
+import StockSimulator from "./pages/stocksimulator";
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/" element={<Register />} />
+        <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/expenses" element={<Expenses />} />
         <Route path="/fraud-alerts" element={<FraudAlerts />} />

@@ -1,7 +1,9 @@
 package com.hackathon.financebanking.controller;
 
 import com.hackathon.financebanking.config.JwtTokenProvider;
+import com.hackathon.financebanking.model.Transaction;
 import com.hackathon.financebanking.model.User;
+import com.hackathon.financebanking.repository.TransactionRepository;
 import com.hackathon.financebanking.repository.UserRepository;
 import com.hackathon.financebanking.service.InvestmentService;
 import lombok.AllArgsConstructor;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.security.Principal;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -30,6 +33,7 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
     private final InvestmentService investmentService;
+    private final TransactionRepository transactionRepository;
 
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody RegisterRequest registerRequest) {
@@ -49,6 +53,8 @@ public class AuthController {
                 .monthlyIncome(registerRequest.getMonthlyIncome() != null ? registerRequest.getMonthlyIncome() : new BigDecimal("2000"))
                 .creditScore(registerRequest.getCreditScore() != null ? registerRequest.getCreditScore() : 650)
                 .balance(new BigDecimal("10000.00")) // Starts with seed bank balance for demonstration
+                .failedLoginAttempts(0)
+                .accountNonLocked(true)
                 .build();
 
         userRepository.save(user);
@@ -58,30 +64,78 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> authenticateUser(@RequestBody LoginRequest loginRequest) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        loginRequest.getUsername(),
-                        loginRequest.getPassword()
-                )
-        );
+        Optional<User> userOpt = userRepository.findByUsername(loginRequest.getUsername());
+        
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            if (user.getAccountNonLocked() != null && !user.getAccountNonLocked()) {
+                return ResponseEntity.status(HttpStatus.LOCKED)
+                        .body("Account locked due to 3 consecutive failed login attempts. Security threat flagged.");
+            }
+        }
 
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-        String jwt = tokenProvider.generateToken(authentication);
+        try {
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            loginRequest.getUsername(),
+                            loginRequest.getPassword()
+                    )
+            );
 
-        User user = userRepository.findByUsername(loginRequest.getUsername())
-                .orElseThrow(() -> new IllegalArgumentException("User not found after authorization"));
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            String jwt = tokenProvider.generateToken(authentication);
 
-        BigDecimal portfolioVal = investmentService.getPortfolioValue(user);
+            User user = userOpt.orElseThrow(() -> new IllegalArgumentException("User not found after authorization"));
+            
+            // Reset attempts on successful authentication
+            user.setFailedLoginAttempts(0);
+            user.setAccountNonLocked(true);
+            userRepository.save(user);
 
-        return ResponseEntity.ok(new AuthResponse(
-                jwt,
-                user.getUsername(),
-                user.getEmail(),
-                user.getMonthlyIncome(),
-                user.getCreditScore(),
-                user.getBalance(),
-                portfolioVal
-        ));
+            BigDecimal portfolioVal = investmentService.getPortfolioValue(user);
+
+            return ResponseEntity.ok(new AuthResponse(
+                    jwt,
+                    user.getUsername(),
+                    user.getEmail(),
+                    user.getMonthlyIncome(),
+                    user.getCreditScore(),
+                    user.getBalance(),
+                    portfolioVal
+            ));
+        } catch (org.springframework.security.core.AuthenticationException e) {
+            if (userOpt.isPresent()) {
+                User user = userOpt.get();
+                int attempts = user.getFailedLoginAttempts() != null ? user.getFailedLoginAttempts() + 1 : 1;
+                user.setFailedLoginAttempts(attempts);
+
+                if (attempts >= 3) {
+                    user.setAccountNonLocked(false);
+                    userRepository.save(user);
+                    logFraudLoginAttempt(user);
+                    return ResponseEntity.status(HttpStatus.LOCKED)
+                            .body("Account locked: 3 consecutive failed login attempts detected. Security alert triggered.");
+                } else {
+                    userRepository.save(user);
+                }
+            }
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid username or password.");
+        }
+    }
+
+    private void logFraudLoginAttempt(User user) {
+        Transaction securityAlert = Transaction.builder()
+                .user(user)
+                .amount(BigDecimal.ZERO)
+                .category("Security Alert")
+                .merchant("Auth Gateway (Login Failure)")
+                .location("Login Page Portal")
+                .timestamp(java.time.LocalDateTime.now())
+                .status("BLOCKED")
+                .riskScore(99)
+                .failureReason("SECURITY ALERT: 3 consecutive failed password attempts detected. User account locked to prevent brute force access.")
+                .build();
+        transactionRepository.save(securityAlert);
     }
 
     @GetMapping("/me")
